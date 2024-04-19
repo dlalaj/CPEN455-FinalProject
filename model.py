@@ -49,8 +49,32 @@ class PixelCNNLayer_down(nn.Module):
 
         return u, ul
 
+class AbsolutePositionalEncoding(nn.Module):
+    # Taken from PA2, absolute positional encoding class to fuse class labels here
+    def __init__(self, num_classes, d_model):
+        super().__init__()
+        self.W = nn.Parameter(torch.empty((num_classes, d_model)))
+        nn.init.normal_(self.W)
+
+    def forward(self, x):
+        """
+        args:
+            x: shape B x D
+        returns:
+            out: shape B x D
+        START BLOCK
+        """
+        B, D = x.shape
+        out = torch.add(x, self.W[:B, :D].to(x.device))
+        """
+        END BLOCK
+        """
+        return out
+
 
 class PixelCNN(nn.Module):
+    MAX_LEN = 256
+    APE_DIM = 32
     def __init__(self, nr_resnet=5, nr_filters=80, nr_logistic_mix=10,
                     resnet_nonlinearity='concat_elu', input_channels=3):
         super(PixelCNN, self).__init__()
@@ -96,18 +120,33 @@ class PixelCNN(nn.Module):
         self.nin_out = nin(nr_filters, num_mix * nr_logistic_mix)
         self.init_padding = None
 
+        self.pos_encoding = AbsolutePositionalEncoding(self.MAX_LEN, self.nr_filters)
 
-    def forward(self, x, sample=False):
+
+    def forward(self, x, labels, sample=False):
+        # I think I need labels added here, so I can fuse them according to this: https://piazza.com/class/lqypkqwt2v84ky/post/374
+        # TODO: Fuse labels somehow - Piazza and TAs mention APE from Transformer assignment 2
+
+        # print(f"SHAPE OF X AT INPPUT: {x.shape}")
+        # Early fusing can be done before anything else in forward:
+        # _, D, _, _ = x.shape
+        # one_hot_labels = self.one_hot_labels(labels, D)
+        # one_hot_labels = one_hot_labels.to(x.device)
+
+        # embeddings = self.pos_encoding(one_hot_labels)
+        # print(f"SHAPE OF X AT INPPUT: {x.shape}")
+
+
         # similar as done in the tf repo :
         if self.init_padding is not sample:
             xs = [int(y) for y in x.size()]
             padding = Variable(torch.ones(xs[0], 1, xs[2], xs[3]), requires_grad=False)
-            self.init_padding = padding.cuda() if x.is_cuda else padding
+            self.init_padding = padding.cuda() if x.is_cuda else padding.to(x.device)
 
         if sample :
             xs = [int(y) for y in x.size()]
             padding = Variable(torch.ones(xs[0], 1, xs[2], xs[3]), requires_grad=False)
-            padding = padding.cuda() if x.is_cuda else padding
+            padding = padding.cuda() if x.is_cuda else padding.to(x.device)
             x = torch.cat((x, padding), 1)
 
         ###      UP PASS    ###
@@ -124,6 +163,25 @@ class PixelCNN(nn.Module):
                 # downscale (only twice)
                 u_list  += [self.downsize_u_stream[i](u_list[-1])]
                 ul_list += [self.downsize_ul_stream[i](ul_list[-1])]
+
+        # print(f"PRE EMBD SHAPE U_LIST: {u_list[0].shape}")
+
+        # Seems like u_list and ul_list have shapes [? * B * D * H * W] according to https://piazza.com/class/lqypkqwt2v84ky/post/301
+        _, D, _, _ = u_list[0].shape
+        one_hot_labels = self.one_hot_labels(labels, D)
+        one_hot_labels = one_hot_labels.to(x.device)
+        # print(f"SHAPE OF ONE HOT LABEL: {one_hot_labels.shape}")
+        
+        embeddings = self.pos_encoding(one_hot_labels).unsqueeze(-1).unsqueeze(-1)
+        # print(f"SHAPE OF EMB AT MIDDLE: {embeddings.shape}")
+        
+        # Middle fusing here, TA says pytorch does broadcasting according to Piazza post @301 but that seems to change
+        # the length of the u_list and ul_list :( try using iteration
+
+        self.add_embedding_to_u_ul(u_list, embeddings)
+        self.add_embedding_to_u_ul(ul_list, embeddings)
+
+        # print(f"POST EMBD SHAPE U_LIST: {u_list[0].shape}")
 
         ###    DOWN PASS    ###
         u  = u_list.pop()
@@ -144,7 +202,22 @@ class PixelCNN(nn.Module):
 
         return x_out
     
+    def one_hot_labels(self, labels, dim):
+        # Encodes labels in one-hot encoding format so that they have shape BxD
+        # labels has shape (B,) and dim represents the dimension D and output has shape (B, D)
+
+        one_hot = torch.zeros(labels.size(0), dim)
+        for batch_idx in range(labels.size(0)):
+            one_hot[batch_idx, labels[batch_idx]] = 1
+
+        return one_hot
     
+    def add_embedding_to_u_ul(self, tensor_list, embedding_tensor):
+        for i in range(len(tensor_list)):
+            # Add the embedding tensor to the current tensor in-place
+            tensor_list[i] += embedding_tensor
+
+
 class random_classifier(nn.Module):
     def __init__(self, NUM_CLASSES):
         super(random_classifier, self).__init__()
@@ -157,5 +230,4 @@ class random_classifier(nn.Module):
         torch.save(self.state_dict(), 'models/conditional_pixelcnn.pth')
     def forward(self, x, device):
         return torch.randint(0, self.NUM_CLASSES, (x.shape[0],)).to(device)
-    
     

@@ -24,9 +24,10 @@ def train_or_test(model, data_loader, optimizer, loss_op, device, args, epoch, m
     loss_tracker = mean_tracker()
     
     for batch_idx, item in enumerate(tqdm(data_loader)):
-        model_input, _ = item
+        model_input, _, labels = item
+        # print(f"LABEL: {type(labels)}")
         model_input = model_input.to(device)
-        model_output = model(model_input)
+        model_output = model(model_input, labels)
         loss = loss_op(model_input, model_output)
         loss_tracker.update(loss.item()/deno)
         if mode == 'training':
@@ -117,9 +118,14 @@ if __name__ == '__main__':
         wandb.config.current_time = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))
         wandb.config.update(args)
 
-    #set device
+    # set device - might try MPS but not sure if it will help much
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    kwargs = {'num_workers':1, 'pin_memory':True, 'drop_last':True}
+    device = torch.device("mps") if torch.backends.mps.is_available() else device
+    kwargs = {'num_workers':0, 'pin_memory':True, 'drop_last':True}
+    if torch.backends.mps.is_available():
+        kwargs['num_workers'] = 0
+    
+    print(f"TRAINING ON {device}!!!!!!!!!")
 
     # set data
     if "mnist" in args.dataset:
@@ -220,10 +226,18 @@ if __name__ == '__main__':
         
         if epoch % args.sampling_interval == 0:
             print('......sampling......')
-            sample_t = sample(model, args.sample_batch_size, args.obs, sample_op)
-            sample_t = rescaling_inv(sample_t)
-            save_images(sample_t, args.sample_dir)
-            sample_result = wandb.Image(sample_t, caption="epoch {}".format(epoch))
+
+            # Here sampling should not be done only for one label but for all
+            for label in my_bidict.values():
+
+                # Prepare label tensor and move it to the correct device, see example in sample() function for this
+                img_labels = torch.full((args.sample_batch_size,), label)
+                img_labels = img_labels.to(next(model.parameters()).device)
+
+                sample_t = sample(model, args.sample_batch_size, args.obs, sample_op, img_labels)
+                sample_t = rescaling_inv(sample_t)
+                save_images(sample_t, args.sample_dir, label)
+                sample_result = wandb.Image(sample_t, caption="epoch {}".format(epoch))
             
             gen_data_dir = args.sample_dir
             ref_data_dir = args.data_dir +'/test'

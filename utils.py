@@ -33,7 +33,7 @@ def log_prob_from_logits(x):
     return x - m - torch.log(torch.sum(torch.exp(x - m), dim=axis, keepdim=True))
 
 
-def discretized_mix_logistic_loss(x, l):
+def discretized_mix_logistic_loss(x, l, training=True):
     """ log-likelihood for mixture of discretized logistics, assumes the data has been rescaled to [-1,1] interval """
     # Pytorch ordering
     x = x.permute(0, 2, 3, 1)
@@ -98,13 +98,26 @@ def discretized_mix_logistic_loss(x, l):
     log_probs        = cond * log_cdf_plus + (1. - cond) * inner_out
     log_probs        = torch.sum(log_probs, dim=3) + log_prob_from_logits(logit_probs)
     
-    return -torch.sum(log_sum_exp(log_probs))
+    # See Piazza post: https://piazza.com/class/lqypkqwt2v84ky/post/290
+    # TA suggests that when training we can leave the discretized_mix_logistic_loss function as is but
+    # we need to ensure log prob is per image rather than across batch so we can use the function to 
+    # convert the model to a conditional classifier
+    # Also look at OpenAI util for same function at https://github.com/openai/pixel-cnn/blob/master/pixel_cnn_pp/nn.py
+    # They use optional argument to distinguish between the sum_all option and the one used for classification
+    
+    if not training:
+        # Here we need to keep the log probabilities and not sum over batch - can be used for classification
+        return -torch.sum(log_sum_exp(log_probs), dim=[1, 2])
+    else:
+        # Here we can sum over the batch - same as before can be used for training
+        return -torch.sum(log_sum_exp(log_probs))
 
 
 def to_one_hot(tensor, n, fill_with=1.):
     # we perform one hot encore with respect to the last axis
     one_hot = torch.FloatTensor(tensor.size() + (n,)).zero_()
     if tensor.is_cuda : one_hot = one_hot.cuda()
+    else: one_hot = one_hot.to(tensor.device)
     one_hot.scatter_(len(tensor.size()), tensor.unsqueeze(-1), fill_with)
     return Variable(one_hot)
 
@@ -121,6 +134,7 @@ def sample_from_discretized_mix_logistic(l, nr_mix):
     # sample mixture indicator from softmax
     temp = torch.FloatTensor(logit_probs.size())
     if l.is_cuda : temp = temp.cuda()
+    else: temp = temp.to(l.device)
     temp.uniform_(1e-5, 1. - 1e-5)
     temp = logit_probs.data - torch.log(- torch.log(temp))
     _, argmax = temp.max(dim=3)
@@ -137,6 +151,7 @@ def sample_from_discretized_mix_logistic(l, nr_mix):
     # we don't actually round to the nearest 8bit value when sampling
     u = torch.FloatTensor(means.size())
     if l.is_cuda : u = u.cuda()
+    else: u = u.to(l.device)
     u.uniform_(1e-5, 1. - 1e-5)
     u = Variable(u)
     x = means + torch.exp(log_scales) * (torch.log(u) - torch.log(1. - u))
@@ -174,7 +189,7 @@ def right_shift(x, pad=None):
     return pad(x)
 
 
-def sample(model, sample_batch_size, obs, sample_op):
+def sample(model, sample_batch_size, obs, sample_op, img_labels=None):
     model.train(False)
     with torch.no_grad():
         data = torch.zeros(sample_batch_size, obs[0], obs[1], obs[2])
@@ -182,7 +197,8 @@ def sample(model, sample_batch_size, obs, sample_op):
         for i in range(obs[1]):
             for j in range(obs[2]):
                 data_v = data
-                out   = model(data_v, sample=True)
+                # Need to sample based on the provided label
+                out   = model(data_v, img_labels, sample=True)
                 out_sample = sample_op(out)
                 data[:, :, i, j] = out_sample.data[:, :, i, j]
     return data
