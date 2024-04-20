@@ -17,10 +17,16 @@ import torch
 # Begin of your code
 sample_op = lambda x : sample_from_discretized_mix_logistic(x, 5)
 def my_sample(model, gen_data_dir, sample_batch_size = 25, obs = (3,32,32), sample_op = sample_op):
-    for label in my_bidict:
+    # Iterate over the values do not care about strings but their numerical classes instead
+    for label in my_bidict.values():
         print(f"Label: {label}")
-        #generate images for each label, each label has 25 images
-        sample_t = sample(model, sample_batch_size, obs, sample_op)
+        # generate images for each label, each label has 25 images
+        
+        # Prepare label tensor and move it to the correct device, see example in sample() function for this
+        img_labels = torch.full((sample_batch_size,), label)
+        img_labels = img_labels.to(next(model.parameters()).device)
+
+        sample_t = sample(model, sample_batch_size, obs, sample_op, img_labels)
         sample_t = rescaling_inv(sample_t)
         save_images(sample_t, os.path.join(gen_data_dir), label=label)
     pass
@@ -31,16 +37,20 @@ if __name__ == "__main__":
     gen_data_dir = "samples"
     BATCH_SIZE=128
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    device = torch.device("mps") if torch.backends.mps.is_available() else device
     
     if not os.path.exists(gen_data_dir):
         os.makedirs(gen_data_dir)
     #Begin of your code
     #Load your model and generate images in the gen_data_dir
     model = PixelCNN(nr_resnet=1, nr_filters=40, input_channels=3, nr_logistic_mix=5)
+    # TODO: Need to load pre-trained model here
     model = model.to(device)
     model = model.eval()
+    # Load model, see example in classification_evaluation.py provided by TA
+    model.load_state_dict(torch.load('models/conditional_pixelcnn.pth'))
     my_sample(model=model, gen_data_dir=gen_data_dir)
-    #End of your code
+    # End of your code
     paths = [gen_data_dir, ref_data_dir]
     print("#generated images: {:d}, #reference images: {:d}".format(
         len(os.listdir(gen_data_dir)), len(os.listdir(ref_data_dir))))
