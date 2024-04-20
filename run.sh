@@ -4,8 +4,8 @@ python pcnn_train.py \
 --sampling_interval 25 \
 --save_interval 25 \
 --dataset cpen455 \
---nr_resnet 1 \
---nr_filters 40 \
+--nr_resnet 2 \
+--nr_filters 80 \
 --nr_logistic_mix 5 \
 --lr_decay 0.999995 \
 --max_epochs 200 \
