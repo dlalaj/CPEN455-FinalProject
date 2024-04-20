@@ -19,15 +19,31 @@ NUM_CLASSES = len(my_bidict)
 # And get the predicted label, which is a tensor of shape (batch_size,)
 # Begin of your code
 def get_label(model, model_input, device):
-    answer = model(model_input, device)
-    return answer
+    
+    B, _, _, _ = model_input.shape
+
+    # Log likelihood tensor move to device 
+    loss_from_log_likelihood = torch.zeros((NUM_CLASSES, B))
+    loss_from_log_likelihood = loss_from_log_likelihood.to(device)
+
+    for possible_class in my_bidict.values():
+
+        # Predicts based on the current label
+        answer = model(model_input, torch.full((B, ), possible_class), device)
+
+        # Here we use discretized_mix_logistic_loss in classification mode because we care about loss not summed over
+        # the batch, we want to know which one would minimize loss so we can tell which class is the most likely
+        loss_from_log_likelihood[possible_class, :] = discretized_mix_logistic_loss(model_input, answer, training=False)
+
+    # Need to minimize loss along class dimension to get best class for each image in the batch
+    return torch.argmin(loss_from_log_likelihood, dim=0)
 # End of your code
 
 def classifier(model, data_loader, device):
     model.eval()
     acc_tracker = ratio_tracker()
     for batch_idx, item in enumerate(tqdm(data_loader)):
-        model_input, categories = item
+        model_input, categories, _ = item
         model_input = model_input.to(device)
         original_label = [my_bidict[item] for item in categories]
         original_label = torch.tensor(original_label, dtype=torch.int64).to(device)
@@ -51,6 +67,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     pprint(args.__dict__)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("mps") if torch.backends.mps.is_available() else device
     kwargs = {'num_workers':0, 'pin_memory':True, 'drop_last':False}
 
     ds_transforms = transforms.Compose([transforms.Resize((32, 32)), rescaling])
@@ -64,7 +81,7 @@ if __name__ == '__main__':
     #Write your code here
     #You should replace the random classifier with your trained model
     #Begin of your code
-    model = random_classifier(NUM_CLASSES)
+    model = PixelCNN(nr_resnet=1, nr_filters=40, input_channels=3, nr_logistic_mix=5)
     #End of your code
     
     model = model.to(device)

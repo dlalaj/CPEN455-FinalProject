@@ -25,7 +25,6 @@ def train_or_test(model, data_loader, optimizer, loss_op, device, args, epoch, m
     
     for batch_idx, item in enumerate(tqdm(data_loader)):
         model_input, _, labels = item
-        # print(f"LABEL: {type(labels)}")
         model_input = model_input.to(device)
         model_output = model(model_input, labels)
         loss = loss_op(model_input, model_output)
@@ -162,12 +161,12 @@ if __name__ == '__main__':
                                                    batch_size=args.batch_size, 
                                                    shuffle=True, 
                                                    **kwargs)
-        test_loader  = torch.utils.data.DataLoader(CPEN455Dataset(root_dir=args.data_dir, 
-                                                                  mode = 'test', 
-                                                                  transform=ds_transforms), 
-                                                   batch_size=args.batch_size, 
-                                                   shuffle=True, 
-                                                   **kwargs)
+        # test_loader  = torch.utils.data.DataLoader(CPEN455Dataset(root_dir=args.data_dir, 
+        #                                                           mode = 'test', 
+        #                                                           transform=ds_transforms), 
+        #                                            batch_size=args.batch_size, 
+        #                                            shuffle=True, 
+        #                                            **kwargs)
         val_loader  = torch.utils.data.DataLoader(CPEN455Dataset(root_dir=args.data_dir, 
                                                                   mode = 'validation', 
                                                                   transform=ds_transforms), 
@@ -206,14 +205,14 @@ if __name__ == '__main__':
         
         # decrease learning rate
         scheduler.step()
-        train_or_test(model = model,
-                      data_loader = test_loader,
-                      optimizer = optimizer,
-                      loss_op = loss_op,
-                      device = device,
-                      args = args,
-                      epoch = epoch,
-                      mode = 'test')
+        # train_or_test(model = model,
+        #               data_loader = test_loader,
+        #               optimizer = optimizer,
+        #               loss_op = loss_op,
+        #               device = device,
+        #               args = args,
+        #               epoch = epoch,
+        #               mode = 'test')
         
         train_or_test(model = model,
                       data_loader = val_loader,
