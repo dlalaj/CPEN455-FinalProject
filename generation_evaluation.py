@@ -15,8 +15,11 @@ import torch
 # You should modify this sample function to get the generated images from your model
 # This function should save the generated images to the gen_data_dir, which is fixed as 'samples'
 # Begin of your code
-sample_op = lambda x : sample_from_discretized_mix_logistic(x, 5)
-def my_sample(model, gen_data_dir, sample_batch_size = 25, obs = (3,32,32), sample_op = sample_op):
+sample_op = lambda x : sample_from_discretized_mix_logistic(x, 10)
+# NOTE: Here without setting sample_batch_size to 48 I am unable to compute the FID score, please take this
+# into account. It was an issue brought up on Piazza a lot and as far as I could tell no proper solution for
+# it was provided
+def my_sample(model, gen_data_dir, sample_batch_size = 48, obs = (3,32,32), sample_op = sample_op):
     # Iterate over the values do not care about strings but their numerical classes instead
     for label in my_bidict.values():
         print(f"Label: {label}")
@@ -37,13 +40,12 @@ if __name__ == "__main__":
     gen_data_dir = "samples"
     BATCH_SIZE=128
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = torch.device("mps") if torch.backends.mps.is_available() else device
     
     if not os.path.exists(gen_data_dir):
         os.makedirs(gen_data_dir)
     #Begin of your code
     #Load your model and generate images in the gen_data_dir
-    model = PixelCNN(nr_resnet=1, nr_filters=40, input_channels=3, nr_logistic_mix=5)
+    model = PixelCNN(nr_resnet=1, nr_filters=40, input_channels=3, nr_logistic_mix=10)
     # TODO: Need to load pre-trained model here
     model = model.to(device)
     model = model.eval()

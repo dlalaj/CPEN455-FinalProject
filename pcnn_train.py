@@ -117,12 +117,9 @@ if __name__ == '__main__':
         wandb.config.current_time = time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))
         wandb.config.update(args)
 
-    # set device - might try MPS but not sure if it will help much
+    # set device 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = torch.device("mps") if torch.backends.mps.is_available() else device
     kwargs = {'num_workers':0, 'pin_memory':True, 'drop_last':True}
-    if torch.backends.mps.is_available():
-        kwargs['num_workers'] = 0
     
     print(f"TRAINING ON {device}!!!!!!!!!")
 

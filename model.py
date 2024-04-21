@@ -75,6 +75,7 @@ class AbsolutePositionalEncoding(nn.Module):
 class PixelCNN(nn.Module):
     MAX_LEN = 256
     APE_DIM = 32
+    NUM_CLASSES = 4
     def __init__(self, nr_resnet=5, nr_filters=80, nr_logistic_mix=10,
                     resnet_nonlinearity='concat_elu', input_channels=3):
         super(PixelCNN, self).__init__()
@@ -121,6 +122,8 @@ class PixelCNN(nn.Module):
         self.init_padding = None
 
         self.pos_encoding = AbsolutePositionalEncoding(self.MAX_LEN, self.nr_filters)
+        # Embedding shape has to account for 4 classes and because we do middle fusion it should match the shape of
+        self.pos_embedding = nn.Embedding(self.NUM_CLASSES, self.nr_filters)
 
 
     def forward(self, x, labels, sample=False):
@@ -135,7 +138,6 @@ class PixelCNN(nn.Module):
 
         # embeddings = self.pos_encoding(one_hot_labels)
         # print(f"SHAPE OF X AT INPPUT: {x.shape}")
-
 
         # similar as done in the tf repo :
         if self.init_padding is not sample:
@@ -163,25 +165,13 @@ class PixelCNN(nn.Module):
                 # downscale (only twice)
                 u_list  += [self.downsize_u_stream[i](u_list[-1])]
                 ul_list += [self.downsize_ul_stream[i](ul_list[-1])]
-
-        # print(f"PRE EMBD SHAPE U_LIST: {u_list[0].shape}")
-
-        # Seems like u_list and ul_list have shapes [? * B * D * H * W] according to https://piazza.com/class/lqypkqwt2v84ky/post/301
-        _, D, _, _ = u_list[0].shape
-        one_hot_labels = self.one_hot_labels(labels, D)
-        one_hot_labels = one_hot_labels.to(x.device)
-        # print(f"SHAPE OF ONE HOT LABEL: {one_hot_labels.shape}")
         
-        embeddings = self.pos_encoding(one_hot_labels).unsqueeze(-1).unsqueeze(-1)
-        # print(f"SHAPE OF EMB AT MIDDLE: {embeddings.shape}")
-        
-        # Middle fusing here, TA says pytorch does broadcasting according to Piazza post @301 but that seems to change
-        # the length of the u_list and ul_list :( try using iteration
-
-        self.add_embedding_to_u_ul(u_list, embeddings)
-        self.add_embedding_to_u_ul(ul_list, embeddings)
-
-        # print(f"POST EMBD SHAPE U_LIST: {u_list[0].shape}")
+        # print(f"SHAPE OF UL: {ul_list[0].shape}")
+        # print(f"DEVICE: {labels.device}")
+        label_embeddings = self.pos_embedding(labels.to(x.device)).unsqueeze(-1).unsqueeze(-1)
+        # print(f"SHAPE OF LE: {label_embeddings.shape}")
+        self.add_embedding_to_u_ul(u_list, label_embeddings)
+        self.add_embedding_to_u_ul(ul_list, label_embeddings)
 
         ###    DOWN PASS    ###
         u  = u_list.pop()
@@ -213,6 +203,8 @@ class PixelCNN(nn.Module):
         return one_hot
     
     def add_embedding_to_u_ul(self, tensor_list, embedding_tensor):
+        # print(f"SHAPE OF u: {tensor_list[0].shape}")
+        # print(f"SHAPE OF EMB: {embedding_tensor.shape}")
         for i in range(len(tensor_list)):
             # Add the embedding tensor to the current tensor in-place
             tensor_list[i] += embedding_tensor
