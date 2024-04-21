@@ -65,8 +65,8 @@ def classify(model, data_loader, device, csv_test_file, csv_output_file_name, fi
         model_input, categories, _ = item
         model_input = model_input.to(device)
         answer, logit = get_label(model, model_input, device)
-        logits.append(logit.T.detach().numpy())
-        for label in answer.numpy():
+        logits.append(logit.T.cpu().detach().numpy())
+        for label in answer.cpu().detach().numpy():
             img_names[img_idx] = [img_names[img_idx], str(label)]
             img_idx += 1
 
@@ -126,6 +126,6 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load('models/conditional_pixelcnn.pth'))
     model.eval()
     print('model parameters loaded')
-    classify(model = model, data_loader = dataloader, device = device, csv_test_file = './data/test.csv', csv_output_file_name = 'submission.csv', fid = 35.9661)
+    classify(model = model, data_loader = dataloader, device = device, csv_test_file = './data/test.csv', csv_output_file_name = 'submission.csv', fid = 37.5056)
         
         
