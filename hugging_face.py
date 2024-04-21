@@ -7,12 +7,14 @@ We provide the remaining code, all you should do are, and you can't modify the r
 2. modify the get_label function to get the predicted label.(line 18-24)(just like Leetcode solutions)
 '''
 from torchvision import datasets, transforms
+import numpy as np
 from utils import *
 from model import * 
 from dataset import *
 from tqdm import tqdm
 from pprint import pprint
 import argparse
+import csv
 NUM_CLASSES = len(my_bidict)
 
 # Write your code here
@@ -36,23 +38,58 @@ def get_label(model, model_input, device):
         loss_from_log_likelihood[possible_class, :] = discretized_mix_logistic_loss(model_input, answer, training=False)
 
     # Need to minimize loss along class dimension to get best class for each image in the batch
-    return torch.argmin(loss_from_log_likelihood, dim=0)
+    return torch.argmin(loss_from_log_likelihood, dim=0), loss_from_log_likelihood
 # End of your code
 
-def classifier(model, data_loader, device):
+def classify(model, data_loader, device, csv_test_file, csv_output_file_name, fid):
+
+    # Read all img names from ./data/test.csv
+    img_names = []
+    with open(csv_test_file, mode='r') as file:
+        reader = csv.reader(file)
+        
+        # Iterate over each row in the CSV file
+        for row in reader:
+            # Should ignore the -1 dummy label and also drop the test/ prefix
+            img_name = row[0].split(',')[0]
+            img_name = img_name.replace('test/', '')
+
+            img_names.append(img_name)
+
+    logits = []
+
     model.eval()
-    acc_tracker = ratio_tracker()
+    img_idx = 0
+
     for batch_idx, item in enumerate(tqdm(data_loader)):
         model_input, categories, _ = item
         model_input = model_input.to(device)
-        original_label = [my_bidict[item] for item in categories]
-        original_label = torch.tensor(original_label, dtype=torch.int64).to(device)
-        answer = get_label(model, model_input, device)
-        correct_num = torch.sum(answer == original_label)
-        acc_tracker.update(correct_num.item(), model_input.shape[0])
-    
-    return acc_tracker.get_ratio()
+        answer, logit = get_label(model, model_input, device)
+        logits.append(logit.T.detach().numpy())
+        for label in answer.numpy():
+            img_names[img_idx] = [img_names[img_idx], str(label)]
+            img_idx += 1
+
+    # Prepare CSV for submission
+    with open(csv_output_file_name, mode='w', newline='') as file:
+        writer = csv.writer(file)
+
+        # Write header
+        writer.writerow(['id' , 'label'])
         
+        # Write classes
+        for row in img_names:
+            writer.writerow(row)
+
+        # Write fid score
+        writer.writerow(['fid', fid])
+    
+    # Prepare npy file for logits
+    logits_arr = np.concatenate(logits, axis=0)
+    np.save('logits.npy', logits_arr)
+
+    return None
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -62,7 +99,7 @@ if __name__ == '__main__':
     parser.add_argument('-b', '--batch_size', type=int,
                         default=32, help='Batch size for inference')
     parser.add_argument('-m', '--mode', type=str,
-                        default='validation', help='Mode for the dataset')
+                        default='test', help='Mode for the dataset')
     
     args = parser.parse_args()
     pprint(args.__dict__)
@@ -74,7 +111,7 @@ if __name__ == '__main__':
                                                             mode = args.mode, 
                                                             transform=ds_transforms), 
                                              batch_size=args.batch_size, 
-                                             shuffle=True, 
+                                             shuffle=False, # Do not shuffle so as to be able to know name of image files
                                              **kwargs)
 
     #Write your code here
@@ -89,7 +126,6 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load('models/conditional_pixelcnn.pth'))
     model.eval()
     print('model parameters loaded')
-    acc = classifier(model = model, data_loader = dataloader, device = device)
-    print(f"Accuracy: {acc}")
+    classify(model = model, data_loader = dataloader, device = device, csv_test_file = './data/test.csv', csv_output_file_name = 'submission.csv', fid = 35.9661)
         
         
